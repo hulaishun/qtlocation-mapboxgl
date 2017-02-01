@@ -29,6 +29,7 @@ Mapbox welcomes participation and contributions from everyone. Please read [CONT
 * Fixed flickering that occurred when panning past the antimeridian. ([#7574](https://github.com/mapbox/mapbox-gl-native/pull/7574))
 * Fixed an issue that could prevent a cached style from appearing while the device is offline. ([#7770](https://github.com/mapbox/mapbox-gl-native/pull/7770))
 * Added `MGLDistanceFormatter` which can be used to format geographic distances. ([#7888](https://github.com/mapbox/mapbox-gl-native/pull/7888))
+* Added a method to MGLMapViewDelegate, `-mapView:shouldChangeFromCamera:toCamera:`, that you can implement to restrict which parts the user can navigate to using gestures. ([#5584](https://github.com/mapbox/mapbox-gl-native/pull/5584))
 
 ## 3.4.1 
 
@@ -102,9 +103,7 @@ Mapbox welcomes participation and contributions from everyone. Please read [CONT
 
 ### User interactivity
 
-* Added a method to MGLMapViewDelegate, `-mapView:shouldChangeFromCamera:toCamera:`, that you can implement to restrict which parts the user can navigate to using gestures. ([#5584](https://github.com/mapbox/mapbox-gl-native/pull/5584))
-* The UITapGestureRecognizer on MGLMapView that is used for selecting annotations now fails if a tap does not select an annotation. ([#7246](https://github.com/mapbox/mapbox-gl-native/pull/7246))
-* As the user zooms in, tiles from lower zoom levels are scaled up until tiles for higher zoom levels are loaded. ([#5143](https://github.com/mapbox/mapbox-gl-native/pull/5143))
+
 
 ### Networking and offline maps
 
