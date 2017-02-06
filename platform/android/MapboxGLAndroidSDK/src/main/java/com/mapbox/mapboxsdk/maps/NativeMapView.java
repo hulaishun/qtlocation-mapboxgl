@@ -8,15 +8,12 @@ import android.graphics.RectF;
 import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
-import android.text.TextUtils;
 import android.util.DisplayMetrics;
-import android.view.Surface;
 
 import com.mapbox.mapboxsdk.annotations.Icon;
 import com.mapbox.mapboxsdk.annotations.Marker;
 import com.mapbox.mapboxsdk.annotations.Polygon;
 import com.mapbox.mapboxsdk.annotations.Polyline;
-import com.mapbox.mapboxsdk.constants.MapboxConstants;
 import com.mapbox.mapboxsdk.geometry.LatLng;
 import com.mapbox.mapboxsdk.geometry.ProjectedMeters;
 import com.mapbox.mapboxsdk.offline.OfflineManager;
@@ -28,7 +25,6 @@ import com.mapbox.services.commons.geojson.Feature;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -37,11 +33,8 @@ import timber.log.Timber;
 // Class that wraps the native methods for convenience
 final class NativeMapView {
 
-  // Flag to indicating destroy was called
-  private boolean destroyed = false;
-
   // Holds the pointer to JNI NativeMapView
-  private long nativeMapViewPtr = 0;
+  private long nativePtr = 0;
 
   // Used for callbacks
   private MapView mapView;
@@ -50,7 +43,7 @@ final class NativeMapView {
   private final float pixelRatio;
 
   // Listeners for Map change events
-  private CopyOnWriteArrayList<MapView.OnMapChangedListener> onMapChangedListeners;
+  private CopyOnWriteArrayList<MapView.OnMapChangedListener> onMapChangedListeners = new CopyOnWriteArrayList<>();
 
   // Listener invoked to return a bitmap of the map
   private MapboxMap.SnapshotReadyCallback snapshotReadyCallback;
@@ -71,19 +64,17 @@ final class NativeMapView {
     this.mapView = mapView;
 
     Context context = mapView.getContext();
-    String dataPath = OfflineManager.getDatabasePath(context);
-
-    // With the availability of offline, we're unifying the ambient (cache) and the offline
-    // databases to be in the same folder, outside cache, to avoid automatic deletion from
-    // the system
-    String cachePath = dataPath;
+    String cachePath = OfflineManager.getDatabasePath(context);
 
     pixelRatio = context.getResources().getDisplayMetrics().density;
     String apkPath = context.getPackageCodePath();
+
     int availableProcessors = Runtime.getRuntime().availableProcessors();
+
     ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
     ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
     activityManager.getMemoryInfo(memoryInfo);
+
     long totalMemory = memoryInfo.availMem;
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
       totalMemory = memoryInfo.totalMem;
@@ -96,23 +87,15 @@ final class NativeMapView {
     if (totalMemory < 0) {
       throw new IllegalArgumentException("totalMemory cannot be negative.");
     }
-    onMapChangedListeners = new CopyOnWriteArrayList<>();
 
-//    if (Looper.myLooper() == null) {
-//      Looper.prepare();
-//    }
-    nativeMapViewPtr = nativeCreate(cachePath, dataPath, apkPath, pixelRatio, availableProcessors, totalMemory);
+    initialize(this, cachePath, apkPath, pixelRatio, availableProcessors, totalMemory);
   }
 
   //
   // Methods
   //
 
-  public void onViewportChanged(int width, int height) {
-    if (isDestroyedOn("onViewportChanged")) {
-      return;
-    }
-
+  void onViewportChanged(int width, int height) {
     if (width < 0) {
       throw new IllegalArgumentException("width cannot be negative.");
     }
@@ -135,656 +118,398 @@ final class NativeMapView {
       height = 65535;
     }
 
-    nativeOnViewportChanged(nativeMapViewPtr, width, height);
+    nativeOnViewportChanged(width, height);
   }
 
-  private boolean isDestroyedOn(String callingMethod) {
-    if (destroyed && !TextUtils.isEmpty(callingMethod)) {
-      Timber.e(String.format(MapboxConstants.MAPBOX_LOCALE,
-        "You're calling `%s` after the `MapView` was destroyed, were you invoking it after `onDestroy()`?",
-        callingMethod));
-    }
-    return destroyed;
-  }
-
-  public void destroy() {
-    nativeDestroy(nativeMapViewPtr);
-    nativeMapViewPtr = 0;
-    mapView = null;
-    destroyed = true;
-  }
-
-  public void update() {
-    if (isDestroyedOn("update")) {
-      return;
-    }
-    nativeUpdate(nativeMapViewPtr);
-  }
-
-  public void render() {
-    Timber.i("Render");
-    if (isDestroyedOn("render")) {
-      return;
-    }
-    nativeRender(nativeMapViewPtr);
-  }
-
-  public void addClass(String clazz) {
-    if (isDestroyedOn("addClass")) {
-      return;
-    }
-    nativeAddClass(nativeMapViewPtr, clazz);
-  }
-
-  public void removeClass(String clazz) {
-    if (isDestroyedOn("removeClass")) {
-      return;
-    }
-    nativeRemoveClass(nativeMapViewPtr, clazz);
-  }
-
-  public boolean hasClass(String clazz) {
-    if (isDestroyedOn("hasClass")) {
-      return false;
-    }
-    return nativeHasClass(nativeMapViewPtr, clazz);
-  }
-
-  public void setClasses(List<String> classes) {
-    if (isDestroyedOn("setClasses")) {
-      return;
-    }
-    nativeSetClasses(nativeMapViewPtr, classes);
-  }
-
-  public List<String> getClasses() {
-    if (isDestroyedOn("getClasses")) {
-      return new ArrayList<>();
-    }
-    return nativeGetClasses(nativeMapViewPtr);
+  void update() {
+    Timber.w("TODO; Implement update()");
+    onInvalidate();
   }
 
   public void setStyleUrl(String url) {
-    if (isDestroyedOn("setStyleUrl")) {
-      return;
-    }
-    nativeSetStyleUrl(nativeMapViewPtr, url);
+    nativeSetStyleUrl(url);
   }
 
   public String getStyleUrl() {
-    if (isDestroyedOn("getStyleUrl")) {
-      return null;
-    }
-    return nativeGetStyleUrl(nativeMapViewPtr);
+    return nativeGetStyleUrl();
   }
 
   public void setStyleJson(String newStyleJson) {
-    if (isDestroyedOn("setStyleJson")) {
-      return;
-    }
-    nativeSetStyleJson(nativeMapViewPtr, newStyleJson);
+    nativeSetStyleJson(newStyleJson);
   }
 
   public String getStyleJson() {
-    if (isDestroyedOn("getStyleJson")) {
-      return null;
-    }
-    return nativeGetStyleJson(nativeMapViewPtr);
+    return nativeGetStyleJson();
   }
 
   public void setAccessToken(String accessToken) {
-    if (isDestroyedOn("setAccessToken")) {
-      return;
-    }
-    nativeSetAccessToken(nativeMapViewPtr, accessToken);
+    Timber.i("Access token: %s", accessToken);
+    nativeSetAccessToken(accessToken);
   }
 
   public String getAccessToken() {
-    if (isDestroyedOn("getAccessToken")) {
-      return null;
-    }
-    return nativeGetAccessToken(nativeMapViewPtr);
+    return nativeGetAccessToken();
   }
 
   public void cancelTransitions() {
-    if (isDestroyedOn("cancelTransitions")) {
-      return;
-    }
-    nativeCancelTransitions(nativeMapViewPtr);
+    nativeCancelTransitions();
   }
 
   public void setGestureInProgress(boolean inProgress) {
-    if (isDestroyedOn("setGestureInProgress")) {
-      return;
-    }
-    nativeSetGestureInProgress(nativeMapViewPtr, inProgress);
+    nativeSetGestureInProgress(inProgress);
   }
 
   public void moveBy(double dx, double dy) {
-    if (isDestroyedOn("moveBy")) {
-      return;
-    }
-    moveBy(dx, dy, 0);
+    Timber.i("Move by %sx%s", dx, dy);
+    nativeMoveBy(dx / pixelRatio, dy / pixelRatio);
   }
 
+  @Deprecated
   public void moveBy(double dx, double dy, long duration) {
-    Timber.i("Move by %sx%s - %s", dx, dy, duration);
-    if (isDestroyedOn("moveBy")) {
-      return;
-    }
-    nativeMoveBy(nativeMapViewPtr, dx / pixelRatio, dy / pixelRatio, duration);
+    moveBy(dx, dy);
   }
 
   public void setLatLng(LatLng latLng) {
-    if (isDestroyedOn("setLatLng")) {
-      return;
-    }
-    setLatLng(latLng, 0);
+    Timber.i("setLatLng %sx%s - %s", latLng.getLatitude(), latLng.getLongitude());
+    nativeSetLatLng(latLng.getLatitude(), latLng.getLongitude());
   }
 
+  @Deprecated
   public void setLatLng(LatLng latLng, long duration) {
-    Timber.i("setLatLng %sx%s - %s", latLng.getLatitude(), latLng.getLongitude(), duration);
-    if (isDestroyedOn("setLatLng")) {
-      return;
-    }
-    nativeSetLatLng(nativeMapViewPtr, latLng.getLatitude(), latLng.getLongitude(), duration);
+    setLatLng(latLng);
   }
 
   public LatLng getLatLng() {
-    if (isDestroyedOn("")) {
-      return new LatLng();
-    }
     // wrap longitude values coming from core
-    return nativeGetLatLng(nativeMapViewPtr).wrap();
+    //TODO return nativeGetLatLng(nativeMapViewPtr).wrap();
+    return null;
   }
 
   public void resetPosition() {
-    if (isDestroyedOn("resetPosition")) {
-      return;
-    }
-    nativeResetPosition(nativeMapViewPtr);
+    //TODO nativeResetPosition(nativeMapViewPtr);
   }
 
   public double getPitch() {
-    if (isDestroyedOn("getPitch")) {
-      return 0;
-    }
-    return nativeGetPitch(nativeMapViewPtr);
+    //TODO return nativeGetPitch(nativeMapViewPtr);
+    return 0;
   }
 
   public void setPitch(double pitch, long duration) {
     Timber.i("setLatLng %s - %s", pitch, duration);
-    if (isDestroyedOn("setPitch")) {
-      return;
-    }
-    nativeSetPitch(nativeMapViewPtr, pitch, duration);
+    //TODO  nativeSetPitch(nativeMapViewPtr, pitch, duration);
   }
 
   public void scaleBy(double ds) {
-    if (isDestroyedOn("scaleBy")) {
-      return;
-    }
-    scaleBy(ds, Double.NaN, Double.NaN);
+    //TODO scaleBy(ds, Double.NaN, Double.NaN);
   }
 
   public void scaleBy(double ds, double cx, double cy) {
-    if (isDestroyedOn("scaleBy")) {
-      return;
-    }
     scaleBy(ds, cx, cy, 0);
   }
 
+  @Deprecated
   public void scaleBy(double ds, double cx, double cy, long duration) {
-    if (isDestroyedOn("scaleBy")) {
-      return;
-    }
-    nativeScaleBy(nativeMapViewPtr, ds, cx / pixelRatio, cy / pixelRatio, duration);
+    //TODO nativeScaleBy(nativeMapViewPtr, ds, cx / pixelRatio, cy / pixelRatio, duration);
   }
 
   public void setScale(double scale) {
-    if (isDestroyedOn("setScale")) {
-      return;
-    }
     setScale(scale, Double.NaN, Double.NaN);
   }
 
   public void setScale(double scale, double cx, double cy) {
-    if (isDestroyedOn("setScale")) {
-      return;
-    }
     setScale(scale, cx, cy, 0);
   }
 
+  @Deprecated
   public void setScale(double scale, double cx, double cy, long duration) {
-    if (isDestroyedOn("setScale")) {
-      return;
-    }
-    nativeSetScale(nativeMapViewPtr, scale, cx / pixelRatio, cy / pixelRatio, duration);
+    //TODO nativeSetScale(nativeMapViewPtr, scale, cx / pixelRatio, cy / pixelRatio, duration);
   }
 
   public double getScale() {
-    if (isDestroyedOn("getScale")) {
-      return 0;
-    }
-    return nativeGetScale(nativeMapViewPtr);
+    //TODO return nativeGetScale(nativeMapViewPtr);
+    return 0;
   }
 
   public void setZoom(double zoom) {
-    if (isDestroyedOn("setZoom")) {
-      return;
-    }
     setZoom(zoom, 0);
   }
 
+  @Deprecated
   public void setZoom(double zoom, long duration) {
-    if (isDestroyedOn("setZoom")) {
-      return;
-    }
-    nativeSetZoom(nativeMapViewPtr, zoom, duration);
+    //TODO nativeSetZoom(nativeMapViewPtr, zoom, duration);
   }
 
   public double getZoom() {
-    if (isDestroyedOn("getZoom")) {
-      return 0;
-    }
-    return nativeGetZoom(nativeMapViewPtr);
+    //TODO return nativeGetZoom(nativeMapViewPtr);
+    return 0;
   }
 
   public void resetZoom() {
-    if (isDestroyedOn("resetZoom")) {
-      return;
-    }
-    nativeResetZoom(nativeMapViewPtr);
+    //TODO nativeResetZoom(nativeMapViewPtr);
   }
 
   public void setMinZoom(double zoom) {
-    if (isDestroyedOn("setMinZoom")) {
-      return;
-    }
-    nativeSetMinZoom(nativeMapViewPtr, zoom);
+    //TODO nativeSetMinZoom(nativeMapViewPtr, zoom);
   }
 
   public double getMinZoom() {
-    if (isDestroyedOn("getMinZoom")) {
-      return 0;
-    }
-    return nativeGetMinZoom(nativeMapViewPtr);
+    //TODO return nativeGetMinZoom(nativeMapViewPtr);
+    return 0;
   }
 
   public void setMaxZoom(double zoom) {
-    if (isDestroyedOn("setMaxZoom")) {
-      return;
-    }
-    nativeSetMaxZoom(nativeMapViewPtr, zoom);
+    //TODO nativeSetMaxZoom(nativeMapViewPtr, zoom);
   }
 
   public double getMaxZoom() {
-    if (isDestroyedOn("getMaxZoom")) {
-      return 0;
-    }
-    return nativeGetMaxZoom(nativeMapViewPtr);
+    //TODO return nativeGetMaxZoom(nativeMapViewPtr);
+    return 0;
   }
 
   public void rotateBy(double sx, double sy, double ex, double ey) {
-    if (isDestroyedOn("rotateBy")) {
-      return;
-    }
     rotateBy(sx, sy, ex, ey, 0);
   }
 
   public void rotateBy(double sx, double sy, double ex, double ey,
                        long duration) {
-    if (isDestroyedOn("rotateBy")) {
-      return;
-    }
-    nativeRotateBy(nativeMapViewPtr, sx / pixelRatio, sy / pixelRatio, ex, ey, duration);
+    //TODO   nativeRotateBy(nativeMapViewPtr, sx / pixelRatio, sy / pixelRatio, ex, ey, duration);
   }
 
   public void setContentPadding(int[] padding) {
-    if (isDestroyedOn("setContentPadding")) {
-      return;
-    }
-    nativeSetContentPadding(nativeMapViewPtr,
-      padding[1] / pixelRatio,
-      padding[0] / pixelRatio,
-      padding[3] / pixelRatio,
-      padding[2] / pixelRatio);
+    //TODO
+//    nativeSetContentPadding(nativeMapViewPtr,
+//      padding[1] / pixelRatio,
+//      padding[0] / pixelRatio,
+//      padding[3] / pixelRatio,
+//      padding[2] / pixelRatio);
   }
 
   public void setBearing(double degrees) {
-    if (isDestroyedOn("setBearing")) {
-      return;
-    }
     setBearing(degrees, 0);
   }
 
   public void setBearing(double degrees, long duration) {
-    if (isDestroyedOn("setBearing")) {
-      return;
-    }
-    nativeSetBearing(nativeMapViewPtr, degrees, duration);
+    //TODO nativeSetBearing(nativeMapViewPtr, degrees, duration);
   }
 
   public void setBearing(double degrees, double cx, double cy) {
-    if (isDestroyedOn("setBearing")) {
-      return;
-    }
-    nativeSetBearingXY(nativeMapViewPtr, degrees, cx / pixelRatio, cy / pixelRatio);
+    //TODO nativeSetBearingXY(nativeMapViewPtr, degrees, cx / pixelRatio, cy / pixelRatio);
   }
 
   public double getBearing() {
-    if (isDestroyedOn("getBearing")) {
-      return 0;
-    }
-    return nativeGetBearing(nativeMapViewPtr);
+    //TODO return nativeGetBearing(nativeMapViewPtr);
+    return 0;
   }
 
   public void resetNorth() {
-    if (isDestroyedOn("resetNorth")) {
-      return;
-    }
-    nativeResetNorth(nativeMapViewPtr);
+    //TODO nativeResetNorth(nativeMapViewPtr);
   }
 
   public long addMarker(Marker marker) {
-    if (isDestroyedOn("addMarker")) {
-      return 0;
-    }
     Marker[] markers = {marker};
-    return nativeAddMarkers(nativeMapViewPtr, markers)[0];
+    //TODO return nativeAddMarkers(nativeMapViewPtr, markers)[0];
+    return 0;
   }
 
   public long[] addMarkers(List<Marker> markers) {
-    if (isDestroyedOn("addMarkers")) {
-      return new long[] {};
-    }
-    return nativeAddMarkers(nativeMapViewPtr, markers.toArray(new Marker[markers.size()]));
+    //TODO return nativeAddMarkers(nativeMapViewPtr, markers.toArray(new Marker[markers.size()]));
+    return null;
   }
 
   public long addPolyline(Polyline polyline) {
-    if (isDestroyedOn("addPolyline")) {
-      return 0;
-    }
     Polyline[] polylines = {polyline};
-    return nativeAddPolylines(nativeMapViewPtr, polylines)[0];
+    //TODO return nativeAddPolylines(nativeMapViewPtr, polylines)[0];
+    return 0;
   }
 
   public long[] addPolylines(List<Polyline> polylines) {
-    if (isDestroyedOn("addPolylines")) {
-      return new long[] {};
-    }
-    return nativeAddPolylines(nativeMapViewPtr, polylines.toArray(new Polyline[polylines.size()]));
+    //TODO return nativeAddPolylines(nativeMapViewPtr, polylines.toArray(new Polyline[polylines.size()]));
+    return null;
   }
 
   public long addPolygon(Polygon polygon) {
-    if (isDestroyedOn("addPolygon")) {
-      return 0;
-    }
     Polygon[] polygons = {polygon};
-    return nativeAddPolygons(nativeMapViewPtr, polygons)[0];
+    //TODO return nativeAddPolygons(nativeMapViewPtr, polygons)[0];
+    return 0;
   }
 
   public long[] addPolygons(List<Polygon> polygons) {
-    if (isDestroyedOn("addPolygons")) {
-      return new long[] {};
-    }
-    return nativeAddPolygons(nativeMapViewPtr, polygons.toArray(new Polygon[polygons.size()]));
+    //TODO return nativeAddPolygons(nativeMapViewPtr, polygons.toArray(new Polygon[polygons.size()]));
+    return null;
   }
 
   public void updateMarker(Marker marker) {
-    if (isDestroyedOn("updateMarker")) {
-      return;
-    }
     LatLng position = marker.getPosition();
     Icon icon = marker.getIcon();
-    nativeUpdateMarker(nativeMapViewPtr, marker.getId(), position.getLatitude(), position.getLongitude(), icon.getId());
+    //TODO nativeUpdateMarker(nativeMapViewPtr, marker.getId(), position.getLatitude(), position.getLongitude(), icon.getId());
   }
 
   public void updatePolygon(Polygon polygon) {
-    if (isDestroyedOn("updatePolygon")) {
-      return;
-    }
-    nativeUpdatePolygon(nativeMapViewPtr, polygon.getId(), polygon);
+    //TODO nativeUpdatePolygon(nativeMapViewPtr, polygon.getId(), polygon);
   }
 
   public void updatePolyline(Polyline polyline) {
-    if (isDestroyedOn("updatePolyline")) {
-      return;
-    }
-    nativeUpdatePolyline(nativeMapViewPtr, polyline.getId(), polyline);
+    //TODO nativeUpdatePolyline(nativeMapViewPtr, polyline.getId(), polyline);
   }
 
   public void removeAnnotation(long id) {
-    if (isDestroyedOn("removeAnnotation")) {
-      return;
-    }
     long[] ids = {id};
     removeAnnotations(ids);
   }
 
   public void removeAnnotations(long[] ids) {
-    if (isDestroyedOn("removeAnnotations")) {
-      return;
-    }
-    nativeRemoveAnnotations(nativeMapViewPtr, ids);
+    //TODO nativeRemoveAnnotations(nativeMapViewPtr, ids);
   }
 
   public long[] queryPointAnnotations(RectF rect) {
-    if (isDestroyedOn("queryPointAnnotations")) {
-      return new long[] {};
-    }
-    return nativeQueryPointAnnotations(nativeMapViewPtr, rect);
+    //TODO return nativeQueryPointAnnotations(nativeMapViewPtr, rect);
+    return new long[0];
   }
 
   public void addAnnotationIcon(String symbol, int width, int height, float scale, byte[] pixels) {
-    if (isDestroyedOn("addAnnotationIcon")) {
-      return;
-    }
-    nativeAddAnnotationIcon(nativeMapViewPtr, symbol, width, height, scale, pixels);
+    //TODO nativeAddAnnotationIcon(nativeMapViewPtr, symbol, width, height, scale, pixels);
   }
 
   public void setVisibleCoordinateBounds(LatLng[] coordinates, RectF padding, double direction, long duration) {
-    if (isDestroyedOn("setVisibleCoordinateBounds")) {
-      return;
-    }
-    nativeSetVisibleCoordinateBounds(nativeMapViewPtr, coordinates, padding, direction, duration);
+    //TODO nativeSetVisibleCoordinateBounds(nativeMapViewPtr, coordinates, padding, direction, duration);
   }
 
   public void onLowMemory() {
-    if (isDestroyedOn("onLowMemory")) {
-      return;
-    }
-    nativeOnLowMemory(nativeMapViewPtr);
+    //TODO nativeOnLowMemory(nativeMapViewPtr);
   }
 
   public void setDebug(boolean debug) {
-    if (isDestroyedOn("setDebug")) {
-      return;
-    }
-    nativeSetDebug(nativeMapViewPtr, debug);
+    //TODO nativeSetDebug(nativeMapViewPtr, debug);
   }
 
   public void cycleDebugOptions() {
-    if (isDestroyedOn("cycleDebugOptions")) {
-      return;
-    }
-    nativeToggleDebug(nativeMapViewPtr);
+    //TODO nativeToggleDebug(nativeMapViewPtr);
   }
 
   public boolean getDebug() {
-    if (isDestroyedOn("getDebug")) {
-      return false;
-    }
-    return nativeGetDebug(nativeMapViewPtr);
+    //TODO return nativeGetDebug(nativeMapViewPtr);
+    return false;
   }
 
   public boolean isFullyLoaded() {
-    if (isDestroyedOn("isFullyLoaded")) {
-      return false;
-    }
-    return nativeIsFullyLoaded(nativeMapViewPtr);
+    //TODO return nativeIsFullyLoaded(nativeMapViewPtr);
+    return false;
   }
 
   public void setReachability(boolean status) {
-    if (isDestroyedOn("setReachability")) {
-      return;
-    }
-    nativeSetReachability(nativeMapViewPtr, status);
+    nativeSetReachability(status);
   }
 
   public double getMetersPerPixelAtLatitude(double lat) {
-    if (isDestroyedOn("getMetersPerPixelAtLatitude")) {
-      return 0;
-    }
-    return nativeGetMetersPerPixelAtLatitude(nativeMapViewPtr, lat, getZoom());
+    //TODO return nativeGetMetersPerPixelAtLatitude(nativeMapViewPtr, lat, getZoom());
+    return 0;
   }
 
   public ProjectedMeters projectedMetersForLatLng(LatLng latLng) {
-    if (isDestroyedOn("projectedMetersForLatLng")) {
-      return null;
-    }
-    return nativeProjectedMetersForLatLng(nativeMapViewPtr, latLng.getLatitude(), latLng.getLongitude());
+    //TODO return nativeProjectedMetersForLatLng(nativeMapViewPtr, latLng.getLatitude(), latLng.getLongitude());
+    return null;
   }
 
   public LatLng latLngForProjectedMeters(ProjectedMeters projectedMeters) {
-    if (isDestroyedOn("latLngForProjectedMeters")) {
-      return new LatLng();
-    }
-    return nativeLatLngForProjectedMeters(nativeMapViewPtr, projectedMeters.getNorthing(),
-      projectedMeters.getEasting()).wrap();
+    //TODO return nativeLatLngForProjectedMeters(nativeMapViewPtr, projectedMeters.getNorthing(),
+    // projectedMeters.getEasting()).wrap();
+    return null;
   }
 
   public PointF pixelForLatLng(LatLng latLng) {
-    if (isDestroyedOn("pixelForLatLng")) {
-      return new PointF();
-    }
-    PointF pointF = nativePixelForLatLng(nativeMapViewPtr, latLng.getLatitude(), latLng.getLongitude());
-    pointF.set(pointF.x * pixelRatio, pointF.y * pixelRatio);
-    return pointF;
+//    PointF pointF = nativePixelForLatLng(nativeMapViewPtr, latLng.getLatitude(), latLng.getLongitude());
+//    pointF.set(pointF.x * pixelRatio, pointF.y * pixelRatio);
+//    return pointF;
+    //TODO
+    return null;
   }
 
   public LatLng latLngForPixel(PointF pixel) {
-    if (isDestroyedOn("latLngForPixel")) {
-      return new LatLng();
-    }
-    return nativeLatLngForPixel(nativeMapViewPtr, pixel.x / pixelRatio, pixel.y / pixelRatio).wrap();
+    //TODO return nativeLatLngForPixel(nativeMapViewPtr, pixel.x / pixelRatio, pixel.y / pixelRatio).wrap();
+    return new LatLng();
   }
 
   public double getTopOffsetPixelsForAnnotationSymbol(String symbolName) {
-    if (isDestroyedOn("getTopOffsetPixelsForAnnotationSymbol")) {
-      return 0;
-    }
-    return nativeGetTopOffsetPixelsForAnnotationSymbol(nativeMapViewPtr, symbolName);
+    //tODO return nativeGetTopOffsetPixelsForAnnotationSymbol(nativeMapViewPtr, symbolName);
+    return 0;
   }
 
+  @Deprecated
   public void jumpTo(double angle, LatLng center, double pitch, double zoom) {
-    if (isDestroyedOn("jumpTo")) {
-      return;
-    }
-    nativeJumpTo(nativeMapViewPtr, angle, center.getLatitude(), center.getLongitude(), pitch, zoom);
+    Timber.w("Deprecated");
   }
 
+  @Deprecated
   public void easeTo(double angle, LatLng center, long duration, double pitch, double zoom,
                      boolean easingInterpolator) {
-    if (isDestroyedOn("easeTo")) {
-      return;
-    }
-    nativeEaseTo(nativeMapViewPtr, angle, center.getLatitude(), center.getLongitude(), duration, pitch, zoom,
-      easingInterpolator);
+    Timber.w("Deprecated");
   }
 
+  @Deprecated
   public void flyTo(double angle, LatLng center, long duration, double pitch, double zoom) {
-    if (isDestroyedOn("flyTo")) {
-      return;
-    }
-    nativeFlyTo(nativeMapViewPtr, angle, center.getLatitude(), center.getLongitude(), duration, pitch, zoom);
+    Timber.w("Deprecated");
   }
 
   public double[] getCameraValues() {
-    if (isDestroyedOn("getCameraValues")) {
-      return new double[] {};
-    }
-    return nativeGetCameraValues(nativeMapViewPtr);
+    //return nativeGetCameraValues(nativeMapViewPtr);
+    return new double[0];
   }
 
   // Runtime style Api
 
   public long getTransitionDuration() {
-    return nativeGetTransitionDuration(nativeMapViewPtr);
+    //TODO return nativeGetTransitionDuration(nativeMapViewPtr);
+    return 0l;
   }
 
   public void setTransitionDuration(long duration) {
-    nativeSetTransitionDuration(nativeMapViewPtr, duration);
+    //TODO nativeSetTransitionDuration(nativeMapViewPtr, duration);
   }
 
   public long getTransitionDelay() {
-    return nativeGetTransitionDelay(nativeMapViewPtr);
+    return 0L;
+    //TODO return nativeGetTransitionDelay(nativeMapViewPtr);
   }
 
   public void setTransitionDelay(long delay) {
-    nativeSetTransitionDelay(nativeMapViewPtr, delay);
+    //TODO nativeSetTransitionDelay(nativeMapViewPtr, delay);
   }
 
   public Layer getLayer(String layerId) {
-    if (isDestroyedOn("getLayer")) {
-      return null;
-    }
-    return nativeGetLayer(nativeMapViewPtr, layerId);
+    //TODO return nativeGetLayer(nativeMapViewPtr, layerId);
+    return null;
   }
 
   public void addLayer(@NonNull Layer layer, @Nullable String before) {
-    if (isDestroyedOn("")) {
-      return;
-    }
-    nativeAddLayer(nativeMapViewPtr, layer.getNativePtr(), before);
+    //TODO nativeAddLayer(nativeMapViewPtr, layer.getNativePtr(), before);
   }
 
   public void removeLayer(@NonNull String layerId) throws NoSuchLayerException {
-    if (isDestroyedOn("removeLayer")) {
-      return;
-    }
-    nativeRemoveLayerById(nativeMapViewPtr, layerId);
+    //TODO nativeRemoveLayerById(nativeMapViewPtr, layerId);
   }
 
   public void removeLayer(@NonNull Layer layer) throws NoSuchLayerException {
-    if (isDestroyedOn("removeLayer")) {
-      return;
-    }
-    nativeRemoveLayer(nativeMapViewPtr, layer.getNativePtr());
+    //TODO nativeRemoveLayer(nativeMapViewPtr, layer.getNativePtr());
   }
 
   public Source getSource(@NonNull String sourceId) {
-    if (isDestroyedOn("getSource")) {
-      return null;
-    }
-    return nativeGetSource(nativeMapViewPtr, sourceId);
+    //TODO return nativeGetSource(nativeMapViewPtr, sourceId);
+    return null;
   }
 
   public void addSource(@NonNull Source source) {
-    if (isDestroyedOn("addSource")) {
-      return;
-    }
-    nativeAddSource(nativeMapViewPtr, source.getNativePtr());
+    //TODO nativeAddSource(nativeMapViewPtr, source.getNativePtr());
   }
 
   public void removeSource(@NonNull String sourceId) throws NoSuchSourceException {
-    if (isDestroyedOn("removeSource")) {
-      return;
-    }
-    nativeRemoveSourceById(nativeMapViewPtr, sourceId);
+    //TODO nativeRemoveSourceById(nativeMapViewPtr, sourceId);
   }
 
   public void removeSource(@NonNull Source source) throws NoSuchSourceException {
-    if (isDestroyedOn("removeSource")) {
-      return;
-    }
-    nativeRemoveSource(nativeMapViewPtr, source.getNativePtr());
+    //TODO nativeRemoveSource(nativeMapViewPtr, source.getNativePtr());
   }
 
   public void addImage(@NonNull String name, @NonNull Bitmap image) {
-    if (isDestroyedOn("addImage")) {
-      return;
-    }
     // Check/correct config
     if (image.getConfig() != Bitmap.Config.ARGB_8888) {
       image = image.copy(Bitmap.Config.ARGB_8888, false);
@@ -798,55 +523,44 @@ final class NativeMapView {
     float density = image.getDensity() == Bitmap.DENSITY_NONE ? Bitmap.DENSITY_NONE : image.getDensity();
     float pixelRatio = density / DisplayMetrics.DENSITY_DEFAULT;
 
-    nativeAddImage(nativeMapViewPtr, name, image.getWidth(), image.getHeight(), pixelRatio, buffer.array());
+    //TODO nativeAddImage(nativeMapViewPtr, name, image.getWidth(), image.getHeight(), pixelRatio, buffer.array());
   }
 
   public void removeImage(String name) {
-    if (isDestroyedOn("removeImage")) {
-      return;
-    }
-    nativeRemoveImage(nativeMapViewPtr, name);
+    //TODO nativeRemoveImage(nativeMapViewPtr, name);
   }
 
   // Feature querying
 
   @NonNull
   public List<Feature> queryRenderedFeatures(PointF coordinates, String... layerIds) {
-    if (isDestroyedOn("queryRenderedFeatures")) {
-      return new ArrayList<>();
-    }
-    Feature[] features = nativeQueryRenderedFeaturesForPoint(nativeMapViewPtr, coordinates.x / pixelRatio,
-      coordinates.y / pixelRatio, layerIds);
-    return features != null ? Arrays.asList(features) : new ArrayList<Feature>();
+//    Feature[] features = nativeQueryRenderedFeaturesForPoint(nativeMapViewPtr, coordinates.x / pixelRatio,
+//      coordinates.y / pixelRatio, layerIds);
+//    return features != null ? Arrays.asList(features) : new ArrayList<Feature>();
+    //TODO
+    return new ArrayList<Feature>();
   }
 
   @NonNull
   public List<Feature> queryRenderedFeatures(RectF coordinates, String... layerIds) {
-    if (isDestroyedOn("queryRenderedFeatures")) {
-      return new ArrayList<>();
-    }
-    Feature[] features = nativeQueryRenderedFeaturesForBox(
-      nativeMapViewPtr,
-      coordinates.left / pixelRatio,
-      coordinates.top / pixelRatio,
-      coordinates.right / pixelRatio,
-      coordinates.bottom / pixelRatio,
-      layerIds);
-    return features != null ? Arrays.asList(features) : new ArrayList<Feature>();
+//    Feature[] features = nativeQueryRenderedFeaturesForBox(
+//      nativeMapViewPtr,
+//      coordinates.left / pixelRatio,
+//      coordinates.top / pixelRatio,
+//      coordinates.right / pixelRatio,
+//      coordinates.bottom / pixelRatio,
+//      layerIds);
+//    return features != null ? Arrays.asList(features) : new ArrayList<Feature>();
+//TODO
+    return new ArrayList<Feature>();
   }
 
   public void scheduleTakeSnapshot() {
-    if (isDestroyedOn("scheduleTakeSnapshot")) {
-      return;
-    }
-    nativeScheduleTakeSnapshot(nativeMapViewPtr);
+    nativeScheduleSnapshot();
   }
 
   public void setApiBaseUrl(String baseUrl) {
-    if (isDestroyedOn("setApiBaseUrl")) {
-      return;
-    }
-    nativeSetAPIBaseURL(nativeMapViewPtr, baseUrl);
+    nativeSetAPIBaseUrl(baseUrl);
   }
 
   public float getPixelRatio() {
@@ -869,11 +583,19 @@ final class NativeMapView {
     mapView.onInvalidate();
   }
 
-  protected void wakeCallback() {
+  /**
+   * Called through JNI when the render thread needs to be woken up
+   */
+  protected void onWake() {
     Timber.i("wake!");
     mapView.requestRender();
   }
 
+  /**
+   * Called through JNI when the map state changed
+   *
+   * @param rawChange the mbgl::MapChange as an int
+   */
   protected void onMapChanged(final int rawChange) {
     Timber.i("onMapChanged: %s", rawChange);
     if (onMapChangedListeners != null) {
@@ -888,10 +610,20 @@ final class NativeMapView {
     }
   }
 
+  /**
+   * Called through JNI if fps is enabled and the fps changed
+   *
+   * @param fps the Frames Per Second
+   */
   protected void onFpsChanged(double fps) {
     mapView.onFpsChanged(fps);
   }
 
+  /**
+   * Called through JNI when a requested snapshot is ready
+   *
+   * @param bitmap the snapshot as a bitmap
+   */
   protected void onSnapshotReady(Bitmap bitmap) {
     if (snapshotReadyCallback != null && bitmap != null) {
       snapshotReadyCallback.onSnapshotReady(bitmap);
@@ -902,218 +634,174 @@ final class NativeMapView {
   // JNI methods
   //
 
-  private native long nativeCreate(String cachePath, String dataPath, String apkPath, float pixelRatio,
-                                   int availableProcessors, long totalMemory);
-
-  private native void nativeDestroy(long nativeMapViewPtr);
-
-  private native void nativeInitializeDisplay(long nativeMapViewPtr);
-
-  private native void nativeTerminateDisplay(long nativeMapViewPtr);
-
-  private native void nativeInitializeContext(long nativeMapViewPtr);
-
-  private native void nativeTerminateContext(long nativeMapViewPtr);
-
-  private native void nativeCreateSurface(long nativeMapViewPtr,
-                                          Surface surface);
-
-  private native void nativeDestroySurface(long nativeMapViewPtr);
-
-  private native void nativeUpdate(long nativeMapViewPtr);
-
-  private native void nativeRender(long nativeMapViewPtr);
-
-  private native void nativeOnViewportChanged(long nativeMapViewPtr, int width, int height);
-
-  private native void nativeAddClass(long nativeMapViewPtr, String clazz);
-
-  private native void nativeRemoveClass(long nativeMapViewPtr, String clazz);
-
-  private native boolean nativeHasClass(long nativeMapViewPtr, String clazz);
-
-  private native void nativeSetClasses(long nativeMapViewPtr,
-                                       List<String> classes);
-
-  private native List<String> nativeGetClasses(long nativeMapViewPtr);
-
-  private native void nativeSetStyleUrl(long nativeMapViewPtr, String url);
-
-  private native String nativeGetStyleUrl(long nativeMapViewPtr);
-
-  private native void nativeSetStyleJson(long nativeMapViewPtr, String newStyleJson);
-
-  private native String nativeGetStyleJson(long nativeMapViewPtr);
-
-  private native void nativeSetAccessToken(long nativeMapViewPtr, String accessToken);
-
-  private native String nativeGetAccessToken(long nativeMapViewPtr);
-
-  private native void nativeCancelTransitions(long nativeMapViewPtr);
-
-  private native void nativeSetGestureInProgress(long nativeMapViewPtr, boolean inProgress);
-
-  private native void nativeMoveBy(long nativeMapViewPtr, double dx,
-                                   double dy, long duration);
-
-  private native void nativeSetLatLng(long nativeMapViewPtr, double latitude, double longitude,
-                                      long duration);
-
-  private native LatLng nativeGetLatLng(long nativeMapViewPtr);
-
-  private native void nativeResetPosition(long nativeMapViewPtr);
-
-  private native double nativeGetPitch(long nativeMapViewPtr);
-
-  private native void nativeSetPitch(long nativeMapViewPtr, double pitch, long duration);
-
-  private native void nativeScaleBy(long nativeMapViewPtr, double ds,
-                                    double cx, double cy, long duration);
-
-  private native void nativeSetScale(long nativeMapViewPtr, double scale,
-                                     double cx, double cy, long duration);
-
-  private native double nativeGetScale(long nativeMapViewPtr);
-
-  private native void nativeSetZoom(long nativeMapViewPtr, double zoom,
-                                    long duration);
-
-  private native double nativeGetZoom(long nativeMapViewPtr);
-
-  private native void nativeResetZoom(long nativeMapViewPtr);
-
-  private native void nativeSetMinZoom(long nativeMapViewPtr, double zoom);
-
-  private native double nativeGetMinZoom(long nativeMapViewPtr);
-
-  private native void nativeSetMaxZoom(long nativeMapViewPtr, double zoom);
-
-  private native double nativeGetMaxZoom(long nativeMapViewPtr);
-
-  private native void nativeRotateBy(long nativeMapViewPtr, double sx,
-                                     double sy, double ex, double ey, long duration);
-
-  private native void nativeSetContentPadding(long nativeMapViewPtr, double top, double left, double bottom,
-                                              double right);
-
-  private native void nativeSetBearing(long nativeMapViewPtr, double degrees,
-                                       long duration);
-
-  private native void nativeSetBearingXY(long nativeMapViewPtr, double degrees,
-                                         double cx, double cy);
-
-  private native double nativeGetBearing(long nativeMapViewPtr);
-
-  private native void nativeResetNorth(long nativeMapViewPtr);
-
-  private native void nativeUpdateMarker(long nativeMapViewPtr, long markerId, double lat, double lon, String iconId);
-
-  private native long[] nativeAddMarkers(long nativeMapViewPtr, Marker[] markers);
-
-  private native long[] nativeAddPolylines(long nativeMapViewPtr, Polyline[] polylines);
-
-  private native long[] nativeAddPolygons(long nativeMapViewPtr, Polygon[] polygons);
-
-  private native void nativeRemoveAnnotations(long nativeMapViewPtr, long[] id);
-
-  private native long[] nativeQueryPointAnnotations(long nativeMapViewPtr, RectF rect);
-
-  private native void nativeAddAnnotationIcon(long nativeMapViewPtr, String symbol,
-                                              int width, int height, float scale, byte[] pixels);
-
-  private native void nativeSetVisibleCoordinateBounds(long nativeMapViewPtr, LatLng[] coordinates,
-                                                       RectF padding, double direction, long duration);
-
-  private native void nativeOnLowMemory(long nativeMapViewPtr);
-
-  private native void nativeSetDebug(long nativeMapViewPtr, boolean debug);
-
-  private native void nativeToggleDebug(long nativeMapViewPtr);
-
-  private native boolean nativeGetDebug(long nativeMapViewPtr);
-
-  private native boolean nativeIsFullyLoaded(long nativeMapViewPtr);
-
-  private native void nativeSetReachability(long nativeMapViewPtr, boolean status);
-
-  private native double nativeGetMetersPerPixelAtLatitude(long nativeMapViewPtr, double lat, double zoom);
-
-  private native ProjectedMeters nativeProjectedMetersForLatLng(long nativeMapViewPtr, double latitude,
-                                                                double longitude);
-
-  private native LatLng nativeLatLngForProjectedMeters(long nativeMapViewPtr, double northing, double easting);
-
-  private native PointF nativePixelForLatLng(long nativeMapViewPtr, double lat, double lon);
-
-  private native LatLng nativeLatLngForPixel(long nativeMapViewPtr, float x, float y);
-
-  private native double nativeGetTopOffsetPixelsForAnnotationSymbol(long nativeMapViewPtr, String symbolName);
-
-  private native void nativeJumpTo(long nativeMapViewPtr, double angle, double latitude, double longitude,
-                                   double pitch, double zoom);
-
-  private native void nativeEaseTo(long nativeMapViewPtr, double angle, double latitude, double longitude,
-                                   long duration, double pitch, double zoom, boolean easingInterpolator);
-
-  private native void nativeFlyTo(long nativeMapViewPtr, double angle, double latitude, double longitude,
-                                  long duration, double pitch, double zoom);
-
-  private native double[] nativeGetCameraValues(long nativeMapViewPtr);
-
-  private native long nativeGetTransitionDuration(long nativeMapViewPtr);
-
-  private native void nativeSetTransitionDuration(long nativeMapViewPtr, long duration);
-
-  private native long nativeGetTransitionDelay(long nativeMapViewPtr);
-
-  private native void nativeSetTransitionDelay(long nativeMapViewPtr, long delay);
-
-  private native Layer nativeGetLayer(long nativeMapViewPtr, String layerId);
-
-  private native void nativeAddLayer(long nativeMapViewPtr, long layerPtr, String before);
-
-  private native void nativeRemoveLayerById(long nativeMapViewPtr, String layerId) throws NoSuchLayerException;
-
-  private native void nativeRemoveLayer(long nativeMapViewPtr, long layerId) throws NoSuchLayerException;
-
-  private native Source nativeGetSource(long nativeMapViewPtr, String sourceId);
-
-  private native void nativeAddSource(long nativeMapViewPtr, long nativeSourcePtr);
-
-  private native void nativeRemoveSourceById(long nativeMapViewPtr, String sourceId) throws NoSuchSourceException;
-
-  private native void nativeRemoveSource(long nativeMapViewPtr, long sourcePtr) throws NoSuchSourceException;
-
-  private native void nativeAddImage(long nativeMapViewPtr, String name, int width, int height, float pixelRatio,
-                                     byte[] array);
-
-  private native void nativeRemoveImage(long nativeMapViewPtr, String name);
-
-  private native void nativeUpdatePolygon(long nativeMapViewPtr, long polygonId, Polygon polygon);
-
-  private native void nativeUpdatePolyline(long nativeMapviewPtr, long polylineId, Polyline polyline);
-
-  private native void nativeScheduleTakeSnapshot(long nativeMapViewPtr);
-
-  private native Feature[] nativeQueryRenderedFeaturesForPoint(long nativeMapViewPtr, float x, float y, String[]
-    layerIds);
-
-  private native Feature[] nativeQueryRenderedFeaturesForBox(long nativeMapViewPtr, float left, float top, float right,
-                                                             float bottom, String[] layerIds);
-
-  private native void nativeSetAPIBaseURL(long nativeMapViewPtr, String baseUrl);
+  private native void initialize(NativeMapView nativeMapView, String cachePath, String apkPath, float pixelRatio,
+                                 int availableProcessors, long totalMemory);
+
+  @Override
+  protected native void finalize() throws Throwable;
+
+  protected native void destroy();
+
+  protected native void render();
+
+  private native void nativeOnViewportChanged(int width, int height);
+
+  private native void nativeSetStyleUrl(String url);
+
+  private native String nativeGetStyleUrl();
+
+  private native void nativeSetStyleJson(String styleJson);
+
+  private native String nativeGetStyleJson();
+
+  private native void nativeSetAccessToken(String accessToken);
+
+  private native String nativeGetAccessToken();
+
+  private native void nativeCancelTransitions();
+
+  private native void nativeSetGestureInProgress(boolean inProgress);
+
+  private native void nativeMoveBy(double dx, double dy);
+
+  private native void nativeSetLatLng(double latitude, double longitude);
+
+  //private native LatLng nativeGetLatLng();
+
+  //
+//  private native void nativeResetPosition(long nativeMapViewPtr);
+//
+//  private native double nativeGetPitch(long nativeMapViewPtr);
+//
+//  private native void nativeSetPitch(long nativeMapViewPtr, double pitch);
+//
+//  private native void nativeScaleBy(long nativeMapViewPtr, double ds, double cx, double cy);
+//
+//  private native void nativeSetScale(long nativeMapViewPtr, double scale, double cx, double cy);
+//
+//  private native double nativeGetScale(long nativeMapViewPtr);
+//
+//  private native void nativeSetZoom(long nativeMapViewPtr, double zoom);
+//
+//  private native double nativeGetZoom(long nativeMapViewPtr);
+//
+//  private native void nativeResetZoom(long nativeMapViewPtr);
+//
+//  private native void nativeSetMinZoom(long nativeMapViewPtr, double zoom);
+//
+//  private native double nativeGetMinZoom(long nativeMapViewPtr);
+//
+//  private native void nativeSetMaxZoom(long nativeMapViewPtr, double zoom);
+//
+//  private native double nativeGetMaxZoom(long nativeMapViewPtr);
+//
+//  private native void nativeRotateBy(long nativeMapViewPtr, double sx, double sy, double ex, double ey);
+//
+//  private native void nativeSetContentPadding(long nativeMapViewPtr, double top, double left, double bottom, double right);
+//
+//  private native void nativeSetBearing(long nativeMapViewPtr, double degrees);
+//
+//  private native void nativeSetBearingXY(long nativeMapViewPtr, double degrees, double cx, double cy);
+//
+//  private native double nativeGetBearing(long nativeMapViewPtr);
+//
+//  private native void nativeResetNorth(long nativeMapViewPtr);
+//
+//  private native void nativeUpdateMarker(long nativeMapViewPtr, long markerId, double lat, double lon, String iconId);
+//
+//  private native long[] nativeAddMarkers(long nativeMapViewPtr, Marker[] markers);
+//
+//  private native long[] nativeAddPolylines(long nativeMapViewPtr, Polyline[] polylines);
+//
+//  private native long[] nativeAddPolygons(long nativeMapViewPtr, Polygon[] polygons);
+//
+//  private native void nativeRemoveAnnotations(long nativeMapViewPtr, long[] id);
+//
+//  private native long[] nativeQueryPointAnnotations(long nativeMapViewPtr, RectF rect);
+//
+//  private native void nativeAddAnnotationIcon(long nativeMapViewPtr, String symbol,
+//                                              int width, int height, float scale, byte[] pixels);
+//
+//  private native void nativeSetVisibleCoordinateBounds(long nativeMapViewPtr, LatLng[] coordinates, RectF padding, double direction);
+//
+//  private native void nativeOnLowMemory(long nativeMapViewPtr);
+//
+//  private native void nativeSetDebug(long nativeMapViewPtr, boolean debug);
+//
+//  private native void nativeToggleDebug(long nativeMapViewPtr);
+//
+//  private native boolean nativeGetDebug(long nativeMapViewPtr);
+//
+//  private native boolean nativeIsFullyLoaded(long nativeMapViewPtr);
+
+  private native void nativeSetReachability(boolean status);
+
+  //  private native double nativeGetMetersPerPixelAtLatitude(long nativeMapViewPtr, double lat, double zoom);
+//
+//  private native ProjectedMeters nativeProjectedMetersForLatLng(long nativeMapViewPtr, double latitude,
+//                                                                double longitude);
+//
+//  private native LatLng nativeLatLngForProjectedMeters(long nativeMapViewPtr, double northing, double easting);
+//
+//  private native PointF nativePixelForLatLng(long nativeMapViewPtr, double lat, double lon);
+//
+//  private native LatLng nativeLatLngForPixel(long nativeMapViewPtr, float x, float y);
+//
+//  private native double nativeGetTopOffsetPixelsForAnnotationSymbol(long nativeMapViewPtr, String symbolName);
+//
+//  private native double[] nativeGetCameraValues(long nativeMapViewPtr);
+//
+//  private native long nativeGetTransitionDuration(long nativeMapViewPtr);
+//
+//  private native void nativeSetTransitionDuration(long nativeMapViewPtr, long duration);
+//
+//  private native long nativeGetTransitionDelay(long nativeMapViewPtr);
+//
+//  private native void nativeSetTransitionDelay(long nativeMapViewPtr, long delay);
+//
+//  private native Layer nativeGetLayer(long nativeMapViewPtr, String layerId);
+//
+//  private native void nativeAddLayer(long nativeMapViewPtr, long layerPtr, String before);
+//
+//  private native void nativeRemoveLayerById(long nativeMapViewPtr, String layerId) throws NoSuchLayerException;
+//
+//  private native void nativeRemoveLayer(long nativeMapViewPtr, long layerId) throws NoSuchLayerException;
+//
+//  private native Source nativeGetSource(long nativeMapViewPtr, String sourceId);
+//
+//  private native void nativeAddSource(long nativeMapViewPtr, long nativeSourcePtr);
+//
+//  private native void nativeRemoveSourceById(long nativeMapViewPtr, String sourceId) throws NoSuchSourceException;
+//
+//  private native void nativeRemoveSource(long nativeMapViewPtr, long sourcePtr) throws NoSuchSourceException;
+//
+//  private native void nativeAddImage(long nativeMapViewPtr, String name, int width, int height, float pixelRatio,
+//                                     byte[] array);
+//
+//  private native void nativeRemoveImage(long nativeMapViewPtr, String name);
+//
+//  private native void nativeUpdatePolygon(long nativeMapViewPtr, long polygonId, Polygon polygon);
+//
+//  private native void nativeUpdatePolyline(long nativeMapviewPtr, long polylineId, Polyline polyline);
+//
+  private native void nativeScheduleSnapshot();
+
+  //
+//  private native Feature[] nativeQueryRenderedFeaturesForPoint(long nativeMapViewPtr, float x, float y, String[]
+//    layerIds);
+//
+//  private native Feature[] nativeQueryRenderedFeaturesForBox(long nativeMapViewPtr, float left, float top, float right,
+//                                                             float bottom, String[] layerIds);
+//
+  private native void nativeSetAPIBaseUrl(String baseUrl);
+
+  private native void nativeEnableFps(boolean enable);
 
   int getWidth() {
-    if (isDestroyedOn("")) {
-      return 0;
-    }
     return mapView.getWidth();
   }
 
   int getHeight() {
-    if (isDestroyedOn("")) {
-      return 0;
-    }
     return mapView.getHeight();
   }
 

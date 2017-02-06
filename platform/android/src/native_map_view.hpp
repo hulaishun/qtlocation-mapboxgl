@@ -7,16 +7,27 @@
 #include <mbgl/util/default_thread_pool.hpp>
 #include <mbgl/util/run_loop.hpp>
 #include <mbgl/storage/default_file_source.hpp>
+#include <mbgl/storage/network_status.hpp>
 
 #include <string>
 #include <jni.h>
 
+#include <jni/jni.hpp>
+
 namespace mbgl {
 namespace android {
 
-class NativeMapView : public mbgl::View, public mbgl::Backend {
+class NativeMapView : public View, public Backend {
 public:
-    NativeMapView(JNIEnv *env, jobject obj, float pixelRatio, int availableProcessors, size_t totalMemory);
+
+    static constexpr auto Name() { return "com/mapbox/mapboxsdk/maps/NativeMapView"; };
+
+    static jni::Class<NativeMapView> javaClass;
+
+    static void registerNative(jni::JNIEnv&);
+
+    NativeMapView(jni::JNIEnv&, jni::Object<NativeMapView>, jni::String, jni::String, jni::jfloat, jni::jint, jni::jlong);
+
     virtual ~NativeMapView();
 
     // mbgl::View //
@@ -30,22 +41,42 @@ public:
 
     // JNI //
 
-    mbgl::Map &getMap();
-    mbgl::DefaultFileSource &getFileSource();
+    void destroy(jni::JNIEnv&);
 
-    void render();
+    void render(jni::JNIEnv&);
 
-    void enableFps(bool enable);
+    void onViewportChanged(jni::JNIEnv&, jni::jint width, jni::jint height);
 
-    void onViewportChanged(int width, int height);
+    void setAPIBaseUrl(jni::JNIEnv&, jni::String);
 
-    mbgl::EdgeInsets getInsets() { return insets;}
-    void setInsets(mbgl::EdgeInsets insets_);
+    jni::String getStyleUrl(jni::JNIEnv&);
 
-    void scheduleTakeSnapshot();
+    void setStyleUrl(jni::JNIEnv&, jni::String);
+
+    jni::String getStyleJson(jni::JNIEnv&);
+
+    void setStyleJson(jni::JNIEnv&, jni::String);
+
+    jni::String getAccessToken(jni::JNIEnv&);
+
+    void setAccessToken(jni::JNIEnv&, jni::String);
+
+    void cancelTransitions(jni::JNIEnv&);
+
+    void setGestureInProgress(jni::JNIEnv&, jni::jboolean);
+
+    void moveBy(jni::JNIEnv&, jni::jdouble, jni::jdouble);
+
+    void setLatLng(jni::JNIEnv&, jni::jdouble, jni::jdouble);
+
+    void setReachability(jni::JNIEnv&, jni::jboolean);
+
+    void scheduleSnapshot(jni::JNIEnv&);
+
+    void enableFps(jni::JNIEnv&, jni::jboolean enable);
 
 protected:
-    // Unused //
+    // Unused methods from mbgl::Backend //
 
     void activate() override {};
     void deactivate() override {};
@@ -63,8 +94,7 @@ private:
 private:
 
     JavaVM *vm = nullptr;
-    JNIEnv *env = nullptr;
-    jweak obj = nullptr;
+    jni::UniqueWeakObject<NativeMapView> javaPeer;
 
     std::string styleUrl;
     std::string apiKey;
@@ -72,6 +102,7 @@ private:
     float pixelRatio;
     bool fpsEnabled = false;
     bool snapshot = false;
+    bool firstRender = true;
     double fps = 0.0;
 
     int width = 0;
